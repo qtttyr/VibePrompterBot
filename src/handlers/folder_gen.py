@@ -120,8 +120,13 @@ def _parse_folder_gen_fallback(text: str) -> dict:
     return result
 
 
-def _build_scope_label(scope: str) -> str:
-    return {"backend": "🖥 Backend", "frontend": "⚛️ Frontend", "fullstack": "🌐 Fullstack"}.get(scope, scope)
+def _build_scope_label(scope: str, lang: str = "ru") -> str:
+    labels = {
+        "backend": "🖥 Backend",
+        "frontend": "⚛️ Frontend",
+        "fullstack": "🌐 Fullstack"
+    }
+    return labels.get(scope, scope)
 
 
 # ─── Entry points ───────────────────────────────────────────────────────────
@@ -129,15 +134,22 @@ def _build_scope_label(scope: str) -> str:
 async def _start_structure_flow(message: Message, state: FSMContext) -> None:
     """Common entry: load projects, show picker."""
     user_id = message.from_user.id
+    lang = await db.get_user_language(user_id)
 
     can_gen = await db.check_folder_gen_limit(user_id)
     if not can_gen:
-        await message.answer(
+        limit_reached_text = (
+            f"🚫 <b>Folder structure limit reached for today.</b>\n\n"
+            f"📊 Limit: <b>1 generation per day</b>.\n"
+            f"⏰ Resets at <b>00:00 UTC</b>.\n\n"
+            f"See you tomorrow! 🗂"
+        ) if lang == "en" else (
             "🚫 <b>Лимит структуры исчерпан на сегодня.</b>\n\n"
             "📊 Доступно: <b>1 генерация в день</b>.\n"
             "⏰ Сбрасывается в <b>00:00 UTC</b>.\n\n"
             "Возвращайся завтра — сгенерируем новую структуру! 🗂"
         )
+        await message.answer(limit_reached_text)
         return
 
     projects = await db.get_user_projects(user_id, limit=5)
@@ -262,7 +274,7 @@ async def pick_scope(callback: CallbackQuery, state: FSMContext) -> None:
     stack = data.get("stack", "")
 
     short_project = (project_info or "")[:60]
-    scope_label = _build_scope_label(scope)
+    scope_label = _build_scope_label(scope, lang)
     
     summary_title = "🗂 <b>Ready to generate!</b>" if lang == "en" else "🗂 <b>Готово к генерации!</b>"
     project_label = "Project" if lang == "en" else "Проект"

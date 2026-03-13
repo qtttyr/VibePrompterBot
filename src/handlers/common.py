@@ -55,7 +55,10 @@ async def set_language(callback: CallbackQuery):
     # We don't bother with _(..., lang) yet in the answer because it might be confusing if the user just switched
     confirm_text = "Language updated! 🇺🇸" if lang == "en" else "Язык изменен! 🇷🇺"
     await callback.answer(confirm_text)
-    await callback.message.edit_text(
+    
+    # Delete the inline message and send a fresh one with the new Reply Keyboard
+    await callback.message.delete()
+    await callback.message.answer(
         _("welcome", lang), 
         reply_markup=main_menu_kb(lang)
     )
