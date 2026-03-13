@@ -210,8 +210,17 @@ class Database:
         """Returns aggregate statistics for administration."""
         async with aiosqlite.connect(self.db_path) as db:
             stats = {}
-            # Total users
-            async with db.execute("SELECT COUNT(*) FROM users") as c:
+            # Total unique users across all relevant tables
+            unique_users_query = """
+                SELECT COUNT(*) FROM (
+                    SELECT user_id FROM users
+                    UNION
+                    SELECT user_id FROM generations
+                    UNION
+                    SELECT user_id FROM usage
+                )
+            """
+            async with db.execute(unique_users_query) as c:
                 row = await c.fetchone()
                 stats["total_users"] = row[0] if row else 0
             
@@ -230,6 +239,18 @@ class Database:
             async with db.execute("SELECT SUM(count) FROM folder_gen_usage") as c:
                 row = await c.fetchone()
                 stats["total_folder_gens"] = row[0] if row else 0
+
+            # Users active today
+            today = date.today().isoformat()
+            async with db.execute("""
+                SELECT COUNT(*) FROM (
+                    SELECT user_id FROM usage WHERE usage_date = ?
+                    UNION
+                    SELECT user_id FROM folder_gen_usage WHERE usage_date = ?
+                )
+            """, (today, today)) as c:
+                row = await c.fetchone()
+                stats["active_today"] = row[0] if row else 0
 
             return stats
 

@@ -208,6 +208,7 @@ async def cmd_admin(message: Message):
         "",
         f"👥 Total Users: <b>{stats['total_users']}</b>",
         f"💎 Active PRO: <b>{stats['active_pro']}</b>",
+        f"📈 Active Today: <b>{stats['active_today']}</b>",
         "",
         "📊 <b>Generations:</b>",
         f"• Prompts: <b>{stats['total_gens']}</b>",
