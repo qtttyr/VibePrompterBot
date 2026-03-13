@@ -34,16 +34,21 @@ class GrokClient:
         *,
         max_output_tokens: int = 900,
     ) -> GrokResponse:
-        # Здесь мы просим Grok СТРОГО вернуть JSON-объект по тем же правилам,
-        # что и Gemini (PromptEngine уже даёт это в тексте промпта).
+        # Здесь мы просим Grok СТРОГО вернуть JSON-объект.
+        # Включаем response_format="json_object", чтобы API гарантировало валидный JSON.
         resp = await self._client.chat.completions.create(
             model=self._model_name,
             messages=[
+                {
+                    "role": "system",
+                    "content": "You are a specialized AI assistant that MUST return ONLY valid JSON objects.",
+                },
                 {
                     "role": "user",
                     "content": prompt,
                 }
             ],
+            response_format={"type": "json_object"},
             max_tokens=max_output_tokens,
         )
 

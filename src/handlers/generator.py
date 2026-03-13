@@ -138,13 +138,41 @@ def _attempt_simple_json_repair(text: str) -> str:
     fixed_lines = []
     for line in lines:
         # Simple heuristic: if a line contains an odd number of unescaped double quotes, escape the last one
-        # This is crude but helps with common Gemini truncation issues
         if line.count('"') % 2 == 1:
-            # Escape the last quote to terminate the string
             line = line.rsplit('"', 1)[0] + r'\"'
         fixed_lines.append(line)
     s = "\n".join(fixed_lines)
     return s
+
+
+def _parse_generator_fallback(text: str) -> dict:
+    """Robust fallback parser for generator that extracts values using regex.
+    Handles unescaped newlines and common AI formatting quirks.
+    """
+    result = {"system_prompt": "", "cursorrules": "", "windsurfrules": "", "notes": ""}
+    raw = text.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+        raw = re.sub(r"\s*```$", "", raw)
+
+    # Regex for keys with potential unescaped multi-line values
+    patterns = {
+        "system_prompt": r'"system_prompt"\s*:\s*"(.*?)(?="\s*,\s*"[a-z_]+"|"\s*\n\s*\}|\n\s*\}|$)',
+        "cursorrules": r'"cursorrules"\s*:\s*"(.*?)(?="\s*,\s*"[a-z_]+"|"\s*\n\s*\}|\n\s*\}|$)',
+        "windsurfrules": r'"windsurfrules"\s*:\s*"(.*?)(?="\s*,\s*"[a-z_]+"|"\s*\n\s*\}|\n\s*\}|$)',
+        "notes": r'"notes"\s*:\s*"(.*?)(?="\s*\n\s*\}|\n\s*\}|$)',
+    }
+
+    for key, pattern in patterns.items():
+        match = re.search(pattern, raw, re.DOTALL)
+        if match:
+            val = match.group(1)
+            if val.endswith('"') and not val.endswith('\\"'):
+                val = val[:-1]
+            # Replace literal \n with actual newline if model outputted them as characters
+            result[key] = val.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+            
+    return result
 
 
 
@@ -320,7 +348,10 @@ async def generate(callback: CallbackQuery, state: FSMContext) -> None:
                 try:
                     result = _try_parse_json(_attempt_simple_json_repair(raw_text))
                 except json.JSONDecodeError:
-                    await callback.message.answer("🔁 <b>Regenerating response (1/1)... previous was invalid.</b>" if lang == "en" else "🔁 <b>Перегенерирую ответ (1/1) — предыдущий был некорректным...</b>")
+                    result = _parse_generator_fallback(raw_text)
+                    if not result.get("system_prompt"):
+                        # If even fallback fails, then we really need regeneration
+                        await callback.message.answer("🔁 <b>Regenerating response (1/1)... previous was invalid.</b>" if lang == "en" else "🔁 <b>Перегенерирую ответ (1/1) — предыдущий был некорректным...</b>")
                     regen_prompt = (
                         full_prompt
                         + "\n\nIMPORTANT: Return ONLY valid JSON. Do not include markdown fences. "

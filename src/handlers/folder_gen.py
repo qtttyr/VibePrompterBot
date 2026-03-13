@@ -26,6 +26,7 @@ from src.config import load_settings
 from src.keyboards.inline import confirm_structure_kb, project_pick_kb, scope_kb
 from src.services.folder_engine import folder_engine
 from src.services.gemini_api import GeminiClient
+from src.services.grok_api import GrokClient
 from src.utils.db import db
 from src.utils.i18n import _
 from src.utils.states import FolderGen
@@ -346,16 +347,34 @@ async def generate_structure(callback: CallbackQuery, state: FSMContext) -> None
             api_key=settings.gemini_api_key,
             model="gemini-2.5-flash",
         )
-        response = await client.generate_text(
-            prompt,
-            max_output_tokens=folder_engine.MAX_OUTPUT_TOKENS,
-            response_schema=response_schema,
-        )
+        try:
+            response = await client.generate_text(
+                prompt,
+                max_output_tokens=folder_engine.MAX_OUTPUT_TOKENS,
+                response_schema=response_schema,
+            )
+            is_grok = False
+        except Exception as exc:
+            # Fallback to Groq
+            logger.warning("Gemini failed in folder_gen, trying Groq fallback: %s", exc)
+            if settings.grok_api_key:
+                await callback.message.answer(
+                    "⚠️ <b>Gemini is overloaded.</b> Switching to Groq..." if lang == "en" else
+                    "⚠️ <b>Gemini перегружен.</b> Переключаюсь на Groq..."
+                )
+                client_grok = GrokClient(api_key=settings.grok_api_key, model="llama-3.3-70b-versatile")
+                response = await client_grok.generate_text(
+                    prompt,
+                    max_output_tokens=folder_engine.MAX_OUTPUT_TOKENS,
+                )
+                is_grok = True
+            else:
+                raise
 
         raw_text = (response.text or "").strip()
 
         # Try structured output first, fallback to JSON parse
-        if response.parsed is not None:
+        if not is_grok and response.parsed is not None:
             result = response.parsed
             if not isinstance(result, dict):
                 result = json.loads(json.dumps(result, ensure_ascii=False))
@@ -368,8 +387,7 @@ async def generate_structure(callback: CallbackQuery, state: FSMContext) -> None
                     logger.exception("Folder gen JSON parse failed. raw: %s", raw_text[:300])
                     await callback.message.answer(
                         "❌ <b>AI returned invalid response.</b>\nPlease try again in 30s." if lang == "en" else
-                        "❌ <b>Модель вернула некорректный ответ (проблема с кавычками или переносами).</b>\n"
-                        "Попробуй снова через 30 секунд."
+                        "❌ <b>Модель вернула некорректный ответ.</b>\nПопробуй снова через 30 секунд."
                     )
                     return
 
