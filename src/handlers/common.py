@@ -1,7 +1,7 @@
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, CallbackQuery
 from src.keyboards.inline import editors_kb, buy_pro_kb, language_kb
 from src.utils.db import db
 from src.utils.i18n import _
@@ -29,9 +29,6 @@ def main_menu_kb(lang: str = "ru") -> ReplyKeyboardMarkup:
     )
 
 
-from datetime import datetime
-from src.keyboards.inline import editors_kb, buy_pro_kb
-
 @router.message(Command("pro"))
 async def cmd_pro(message: Message):
     """Direct command to open PRO subscription options."""
@@ -49,7 +46,6 @@ async def cmd_language(message: Message):
     await message.answer(_("select_language", lang), reply_markup=language_kb())
 
 
-from aiogram.types import CallbackQuery
 @router.callback_query(F.data.startswith("setlang:"))
 async def set_language(callback: CallbackQuery):
     lang = callback.data.split(":")[1]

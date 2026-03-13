@@ -191,7 +191,6 @@ async def capture_idea(message: Message, state: FSMContext) -> None:
 
 
 @router.callback_query(F.data == "action:generate")
-@router.callback_query(F.data == "action:generate")
 async def generate(callback: CallbackQuery, state: FSMContext) -> None:
     user_id = callback.from_user.id
     lang = await db.get_user_language(user_id)
