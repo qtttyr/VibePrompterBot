@@ -2,11 +2,13 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, CallbackQuery
+from datetime import datetime
+from html import escape
+
 from src.keyboards.inline import editors_kb, buy_pro_kb, language_kb
 from src.utils.db import db
 from src.utils.i18n import _
 from src.utils.states import PromptGen
-from html import escape
 
 router = Router()
 
@@ -202,7 +204,7 @@ async def cmd_founder_pro(message: Message):
     )
 
 
-@router.message(lambda m: m.text in ("⚡ Новый промпт", "⚡ New Prompt"))
+@router.message(F.text.in_({"⚡ Новый промпт", "⚡ New Prompt"}))
 async def quick_new_prompt(message: Message, state: FSMContext) -> None:
     """Quick button: start new prompt generation flow."""
     lang = await db.get_user_language(message.from_user.id)
@@ -214,13 +216,13 @@ async def quick_new_prompt(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.message(lambda m: m.text in ("👤 Профиль", "👤 Profile"))
+@router.message(F.text.in_({"👤 Профиль", "👤 Profile"}))
 async def quick_profile(message: Message) -> None:
     """Quick button: show profile."""
     await cmd_profile(message)
 
 
-@router.message(lambda m: m.text in ("❓ Помощь", "❓ Help"))
+@router.message(F.text.in_({"❓ Помощь", "❓ Help"}))
 async def quick_help(message: Message) -> None:
     """Quick button: show help."""
     await cmd_help(message)
