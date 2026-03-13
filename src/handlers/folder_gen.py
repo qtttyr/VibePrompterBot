@@ -187,7 +187,7 @@ async def cmd_structure(message: Message, state: FSMContext) -> None:
     await _start_structure_flow(message, state)
 
 
-@router.message(F.text == "🗂 Структура")
+@router.message(F.text.in_({"🗂 Структура", "🗂 Structure"}))
 async def quick_structure(message: Message, state: FSMContext) -> None:
     await state.clear()
     await _start_structure_flow(message, state)
