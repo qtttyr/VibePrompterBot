@@ -183,6 +183,42 @@ async def cmd_help(message: Message) -> None:
     )
 
 
+@router.message(Command("admin"))
+async def cmd_admin(message: Message):
+    """Admin dashboard: stats and overview."""
+    from src.config import load_settings
+    settings = load_settings()
+    
+    # Check if user is the admin (by ID or if they use the founder password)
+    is_admin = (settings.admin_id and message.from_user.id == settings.admin_id)
+    
+    # Fallback: allow if the message contains the password (e.g. /admin PASSWORD)
+    args = message.text.split(maxsplit=1)
+    if not is_admin and len(args) == 2 and args[1] == settings.founder_password:
+        is_admin = True
+
+    if not is_admin:
+        # Silent ignore or generic message to avoid exposing the command
+        return
+
+    stats = await db.get_global_stats()
+    
+    report = [
+        "👑 <b>Admin Dashboard</b>",
+        "",
+        f"👥 Total Users: <b>{stats['total_users']}</b>",
+        f"💎 Active PRO: <b>{stats['active_pro']}</b>",
+        "",
+        "📊 <b>Generations:</b>",
+        f"• Prompts: <b>{stats['total_gens']}</b>",
+        f"• Structures: <b>{stats['total_folder_gens'] or 0}</b>",
+        "",
+        f"📅 Date: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+    ]
+    
+    await message.answer("\n".join(report))
+
+
 @router.message(Command("founder_make_me_pro"))
 async def cmd_founder_pro(message: Message):
     """Secret command for the founder to get Lifetime PRO for free."""

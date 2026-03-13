@@ -206,4 +206,31 @@ class Database:
             """, (user_id, lang))
             await db.commit()
 
+    async def get_global_stats(self) -> dict:
+        """Returns aggregate statistics for administration."""
+        async with aiosqlite.connect(self.db_path) as db:
+            stats = {}
+            # Total users
+            async with db.execute("SELECT COUNT(*) FROM users") as c:
+                row = await c.fetchone()
+                stats["total_users"] = row[0] if row else 0
+            
+            # Active PRO subscriptions
+            now = datetime.utcnow().isoformat()
+            async with db.execute("SELECT COUNT(*) FROM subscriptions WHERE expires_at > ?", (now,)) as c:
+                row = await c.fetchone()
+                stats["active_pro"] = row[0] if row else 0
+
+            # Total prompt generations
+            async with db.execute("SELECT COUNT(*) FROM generations") as c:
+                row = await c.fetchone()
+                stats["total_gens"] = row[0] if row else 0
+
+            # Total folder generations (approximated from usage log)
+            async with db.execute("SELECT SUM(count) FROM folder_gen_usage") as c:
+                row = await c.fetchone()
+                stats["total_folder_gens"] = row[0] if row else 0
+
+            return stats
+
 db = Database()

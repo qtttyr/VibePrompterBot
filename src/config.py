@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     grok_api_key: str | None = None
     founder_password: str = "default_unsafe_password"
+    admin_id: int | None = None
 
 
 def load_settings() -> Settings:
