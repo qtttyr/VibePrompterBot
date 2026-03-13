@@ -2,29 +2,30 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
-from src.keyboards.inline import editors_kb
+from src.keyboards.inline import editors_kb, buy_pro_kb, language_kb
 from src.utils.db import db
+from src.utils.i18n import _
 from src.utils.states import PromptGen
 from html import escape
 
 router = Router()
 
 
-def main_menu_kb() -> ReplyKeyboardMarkup:
+def main_menu_kb(lang: str = "ru") -> ReplyKeyboardMarkup:
     """Quick action keyboard that stays pinned at the bottom."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text="⚡ Новый промпт"),
-                KeyboardButton(text="🗂 Структура"),
+                KeyboardButton(text=_("kb_new_prompt", lang)),
+                KeyboardButton(text=_("kb_structure", lang)),
             ],
             [
-                KeyboardButton(text="👤 Профиль"),
-                KeyboardButton(text="❓ Помощь"),
+                KeyboardButton(text=_("kb_profile", lang)),
+                KeyboardButton(text=_("kb_help", lang)),
             ],
         ],
         resize_keyboard=True,
-        input_field_placeholder="Выбери действие или напиши...",
+        input_field_placeholder="..." if lang == "en" else "Выбери действие или напиши...",
     )
 
 
@@ -34,15 +35,31 @@ from src.keyboards.inline import editors_kb, buy_pro_kb
 @router.message(Command("pro"))
 async def cmd_pro(message: Message):
     """Direct command to open PRO subscription options."""
+    lang = await db.get_user_language(message.from_user.id)
     await message.answer(
-        "💎 <b>План PRO</b>\n\n"
-        "Открой для себя безграничные возможности генерации!\n"
-        "• Безлимитные системные промпты\n"
-        "• Безлимитные структуры папок\n"
-        "• Сохранение 50+ проектов в историю\n"
-        "• Ранний доступ к новым моделям\n\n"
-        "Оплата производится безопасно через Telegram Stars (⭐️). Выбери свой план:",
-        reply_markup=buy_pro_kb()
+        f"<b>{_('pro_title', lang)}</b>\n\n{_('pro_desc', lang)}",
+        reply_markup=buy_pro_kb(lang)
+    )
+
+
+@router.message(Command("lang"))
+async def cmd_language(message: Message):
+    """Command to change language."""
+    lang = await db.get_user_language(message.from_user.id)
+    await message.answer(_("select_language", lang), reply_markup=language_kb())
+
+
+from aiogram.types import CallbackQuery
+@router.callback_query(F.data.startswith("setlang:"))
+async def set_language(callback: CallbackQuery):
+    lang = callback.data.split(":")[1]
+    await db.set_user_language(callback.from_user.id, lang)
+    # We don't bother with _(..., lang) yet in the answer because it might be confusing if the user just switched
+    confirm_text = "Language updated! 🇺🇸" if lang == "en" else "Язык изменен! 🇷🇺"
+    await callback.answer(confirm_text)
+    await callback.message.edit_text(
+        _("welcome", lang), 
+        reply_markup=main_menu_kb(lang)
     )
 
 
@@ -50,6 +67,7 @@ async def cmd_pro(message: Message):
 @router.message(Command("dashboard"))
 async def cmd_profile(message: Message):
     user_id = message.from_user.id
+    lang = await db.get_user_language(user_id)
     usage_count = await db.get_user_usage(user_id)
     history = await db.get_last_generations(user_id)
     sub = await db.get_user_subscription(user_id)
@@ -57,7 +75,7 @@ async def cmd_profile(message: Message):
     is_pro = sub and sub["expires_at"] > datetime.utcnow().isoformat()
     
     profile_lines = [
-        f"👤 <b>Профиль</b>",
+        f"{_('profile_title', lang)}",
         "",
         f"🆔 ID: <code>{user_id}</code>",
     ]
@@ -67,18 +85,17 @@ async def cmd_profile(message: Message):
         try:
             exp_date = datetime.fromisoformat(sub['expires_at']).strftime("%d.%m.%Y")
             if "36500" in sub['expires_at'] or exp_date.startswith("21"):  # roughly lifetime indicator
-                status = "💎 PRO Навсегда"
+                status = _("status_pro_lifetime", lang)
             else:
-                status = f"💎 PRO до {exp_date}"
+                status = _("status_pro_until", lang).format(date=exp_date)
         except Exception:
             status = "💎 PRO"
 
         profile_lines.extend([
-            f"⭐️ Статус: <b>{status}</b>",
-            f"📊 Промпты: <b>Безлимит</b> ✨",
-            f"🗂 Структуры: <b>Безлимит</b> ✨",
+            f"⭐️ Status: <b>{status}</b>",
+            f"{_('usage_today', lang).format(bar='✨', count='∞', limit='∞')}",
             "",
-            "📁 <b>Последние проекты (PRO):</b>"
+            f"{_('last_projects', lang)} (PRO):"
         ])
     else:
         # Free User
@@ -88,11 +105,11 @@ async def cmd_profile(message: Message):
         usage_bar = used_blocks + free_blocks if (usage_count + remaining) > 0 else "⬜⬜"
 
         profile_lines.extend([
-            f"⭐️ Статус: <b>Бесплатный</b>",
-            f"📊 Промпты: {usage_bar} <b>{usage_count}/2</b>",
-            f"🎁 Осталось: <b>{remaining}</b> генерации",
+            f"⭐️ Status: <b>{_('status_free', lang)}</b>",
+            f"{_('usage_today', lang).format(bar=usage_bar, count=usage_count, limit=2)}",
+            f"{_('remaining_gens', lang).format(count=remaining)}",
             "",
-            "📁 <b>Последние проекты:</b>"
+            f"{_('last_projects', lang)}"
         ])
 
     if history:
@@ -118,10 +135,10 @@ async def cmd_profile(message: Message):
                 f"     <i>{escape(str(editor or '?'))} · {escape(idea_short)}</i>"
             )
     else:
-        profile_lines[-1] = "📁 <i>История проекта пуста.</i>"
+        profile_lines[-1] = _("history_empty", lang)
 
     # If normal user, attach the "Buy PRO" keyboard below the text
-    kb = None if is_pro else buy_pro_kb()
+    kb = None if is_pro else buy_pro_kb(lang)
 
     await message.answer(
         "\n".join(profile_lines),
@@ -130,52 +147,38 @@ async def cmd_profile(message: Message):
     
     # Send the main menu purely to refresh the bottom reply-kbd if needed
     if is_pro:
-        await message.answer("Чем займёмся?", reply_markup=main_menu_kb())
+        await message.answer("...", reply_markup=main_menu_kb(lang))
 
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
+    
+    # Auto-detect language
+    tg_lang = (message.from_user.language_code or "ru").lower()
+    lang = "en" if "en" in tg_lang else "ru"
+    await db.set_user_language(message.from_user.id, lang)
+
+    await message.answer(_("welcome", lang), reply_markup=main_menu_kb(lang))
+    # Note: we don't set state here immediately to allow user to see the welcome/lang options first
+    # But usually /start triggers step 1. Let's keep it consistent.
     await state.set_state(PromptGen.project_info)
-
-    welcome_text = (
-        "🪐 <b>Vibe Coding Prompter</b>\n\n"
-        "Генерирую персональные промпты для AI-редакторов: системный промпт, "
-        "<code>.cursorrules</code>, <code>.windsurfrules</code> и советы — всё под твой проект.\n\n"
-        "📝 <b>Шаг 1/5 — Проект</b>\n"
-        "Расскажи о своём проекте: что строишь, в какой стек, есть ли документация или особенности?"
-    )
-
-    await message.answer(welcome_text, reply_markup=main_menu_kb())
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     user_id = message.from_user.id
+    lang = await db.get_user_language(user_id)
     sub = await db.get_user_subscription(user_id)
     is_pro = False
     if sub:
-        from datetime import datetime
         is_pro = sub["expires_at"] > datetime.utcnow().isoformat()
         
-    limit_text = (
-        "📊 <b>Лимиты (PRO 💎):</b>\n"
-        "• Промпт: <b>Безлимит</b>\n"
-        "• Структура: <b>Безлимит</b>\n\n"
-    ) if is_pro else (
-        "📊 <b>Лимиты (бесплатно):</b>\n"
-        "• Промпт: 2 генерации в день\n"
-        "• Структура: 1 генерация в день\n"
-        "<i>Подписывайся на PRO (/pro), чтобы убрать лимиты!</i>\n\n"
-    )
+    limit_text = _("limit_pro", lang) if is_pro else _("limit_free", lang)
     
     await message.answer(
-        "🪐 <b>Как пользоваться:</b>\n\n"
-        "1️⃣ Нажми <b>⚡ Новый промпт</b> или /start \u2192 генерируй system prompt\n"
-        "2️⃣ Нажми <b>🗂 Структура</b> или /structure \u2192 генерируй дерево папок + mkdir\n\n"
-        f"{limit_text}"
-        "❓ Вопросы? Просто напиши!",
-        reply_markup=main_menu_kb(),
+        _("help", lang).format(limit_text=limit_text),
+        reply_markup=main_menu_kb(lang),
     )
 
 
@@ -203,25 +206,25 @@ async def cmd_founder_pro(message: Message):
     )
 
 
-@router.message(lambda m: m.text in ("⚡ Новый промпт",))
+@router.message(lambda m: m.text in ("⚡ Новый промпт", "⚡ New Prompt"))
 async def quick_new_prompt(message: Message, state: FSMContext) -> None:
     """Quick button: start new prompt generation flow."""
+    lang = await db.get_user_language(message.from_user.id)
     await state.clear()
     await state.set_state(PromptGen.project_info)
     await message.answer(
-        "📝 <b>Шаг 1/5 \u2014 Проект</b>\n\n"
-        "Расскажи о своём проекте: что строишь, стек, особенности?",
-        reply_markup=main_menu_kb(),
+        _("step_1", lang),
+        reply_markup=main_menu_kb(lang),
     )
 
 
-@router.message(lambda m: m.text in ("👤 Профиль",))
+@router.message(lambda m: m.text in ("👤 Профиль", "👤 Profile"))
 async def quick_profile(message: Message) -> None:
     """Quick button: show profile."""
     await cmd_profile(message)
 
 
-@router.message(lambda m: m.text in ("❓ Помощь",))
+@router.message(lambda m: m.text in ("❓ Помощь", "❓ Help"))
 async def quick_help(message: Message) -> None:
     """Quick button: show help."""
     await cmd_help(message)

@@ -14,6 +14,7 @@ from src.services.gemini_api import GeminiClient
 from src.services.grok_api import GrokClient
 from src.services.prompt_engine import prompt_engine
 from src.utils.db import db
+from src.utils.i18n import _
 from src.utils.states import PromptGen
 
 
@@ -150,53 +151,76 @@ def _attempt_simple_json_repair(text: str) -> str:
 @router.message(PromptGen.idea)
 async def capture_idea(message: Message, state: FSMContext) -> None:
     idea = (message.text or "").strip()
+    user_id = message.from_user.id
+    lang = await db.get_user_language(user_id)
+    
     if not idea:
-        await message.answer("Пожалуйста, опиши задачу текстом 📝")
+        await message.answer("Please describe your task in text 📝" if lang == "en" else "Пожалуйста, опиши задачу текстом 📝")
         return
 
     await state.update_data(idea=idea)
     data = await state.get_data()
 
-    # Экранируем для вывода в Telegram
+    # Escape for Telegram output
     editor = escape(str(data.get("editor", "")))
     stack = escape(str(data.get("stack", "")))
     model = escape(str(data.get("model", "")))
     idea_escaped = escape(idea)
     project_info = escape(str(data.get("project_info", "")))
 
+    summary_title = "✨ <b>All data collected!</b> ✨" if lang == "en" else "✨ <b>Все данные собраны!</b> ✨"
+    labels = {
+        "project": "Project" if lang == "en" else "Проект",
+        "editor": "Editor" if lang == "en" else "Редактор",
+        "stack": "Stack" if lang == "en" else "Стек",
+        "model": "Model" if lang == "en" else "Модель",
+        "idea": "Idea" if lang == "en" else "Идея",
+        "gen_hint": "Press <b>Generate</b> to create the magic! ✨" if lang == "en" else "Нажми <b>Generate</b>, чтобы я сотворил магию! ✨"
+    }
+
     await message.answer(
-        "✨ <b>Все данные собраны!</b> ✨\n\n"
-        f"📝 <b>Проект:</b> {project_info}\n"
-        f"🚀 <b>Редактор:</b> {editor}\n"
-        f"⚛️ <b>Стек:</b> {stack}\n"
-        f"🤖 <b>Модель:</b> {model}\n"
-        f"💡 <b>Идея:</b> {idea_escaped}\n\n"
-        "Нажми <b>Generate</b>, чтобы я сотворил магию! ✨",
-        reply_markup=generate_kb(),
+        f"{summary_title}\n\n"
+        f"📝 <b>{labels['project']}:</b> {project_info}\n"
+        f"🚀 <b>{labels['editor']}:</b> {editor}\n"
+        f"⚛️ <b>{labels['stack']}:</b> {stack}\n"
+        f"🤖 <b>{labels['model']}:</b> {model}\n"
+        f"💡 <b>{labels['idea']}:</b> {idea_escaped}\n\n"
+        f"{labels['gen_hint']}",
+        reply_markup=generate_kb(lang),
     )
 
 
 @router.callback_query(F.data == "action:generate")
+@router.callback_query(F.data == "action:generate")
 async def generate(callback: CallbackQuery, state: FSMContext) -> None:
     user_id = callback.from_user.id
+    lang = await db.get_user_language(user_id)
     
     # ── Daily limit check ──────────────────────────────────────────────────
     can_generate = await db.check_limit(user_id)
     if not can_generate:
-        await callback.answer("❌ Лимит исчерпан", show_alert=True)
+        await callback.answer(_("error_limit", lang), show_alert=True)
         usage_count = await db.get_user_usage(user_id)
-        await callback.message.answer(
-            "🚫 <b>Дневной лимит исчерпан.</b>\n\n"
+        
+        limit_reached_text = (
+            f"🚫 <b>Daily limit reached.</b>\n\n"
+            f"📊 Used today: <b>{usage_count}/2</b> generations\n\n"
+            f"⏰ Resets at <b>00:00</b> UTC.\n"
+            f"💡 <i>Free version allows 2 generations per day.</i>\n\n"
+            f"See you tomorrow! 🙌"
+        ) if lang == "en" else (
+            f"🚫 <b>Дневной лимит исчерпан.</b>\n\n"
             f"📊 Использовано сегодня: <b>{usage_count}/2</b> генераций\n\n"
-            "⏰ Лимит сбрасывается в <b>00:00</b> по UTC.\n"
-            "💡 <i>В бесплатной версии доступно 2 генерации в день.</i>\n\n"
-            "Возвращайся завтра — буду ждать! 🙌"
+            f"⏰ Лимит сбрасывается в <b>00:00</b> по UTC.\n"
+            f"💡 <i>В бесплатной версии доступно 2 генерации в день.</i>\n\n"
+            f"Возвращайся завтра — буду ждать! 🙌"
         )
+        await callback.message.answer(limit_reached_text)
         return
     # ──────────────────────────────────────────────────────────────────────
 
-    await callback.answer("⏳ Генерирую промпты... Это займет 10-20 секунд.")
-    await callback.message.answer("🤖 <b>Модель приступила к работе...</b>")
+    await callback.answer(_("generating", lang))
+    await callback.message.answer("🤖 <b>AI is working...</b>" if lang == "en" else "🤖 <b>Модель приступила к работе...</b>")
 
     data = await state.get_data()
     settings = load_settings()
@@ -229,7 +253,7 @@ async def generate(callback: CallbackQuery, state: FSMContext) -> None:
     }
     
     try:
-        await callback.message.answer("🧩 <b>Проверяю формат ответа...</b>")
+        await callback.message.answer("🧩 <b>Verifying response format...</b>" if lang == "en" else "🧩 <b>Проверяю формат ответа...</b>")
 
         # 1) Основной вызов модели: либо Gemini, либо Groq
         if is_grok:
@@ -251,8 +275,8 @@ async def generate(callback: CallbackQuery, state: FSMContext) -> None:
                 logger.warning("Gemini ServerError, trying Groq (Groq.com) fallback: %s", exc)
                 if settings.grok_api_key:
                     await callback.message.answer(
-                        "⚠️ <b>Gemini сейчас перегружен.</b>\n"
-                        "Переключаюсь на Groq (Llama 3.3 70B на groq.com)..."
+                        "⚠️ <b>Gemini is overloaded.</b>\nSwitching to Groq (Llama 3.3 70B)..." if lang == "en" else
+                        "⚠️ <b>Gemini сейчас перегружен.</b>\nПереключаюсь на Groq (Llama 3.3 70B на groq.com)..."
                     )
                     client_grok = GrokClient(api_key=settings.grok_api_key, model="llama-3.3-70b-versatile")
                     response = await client_grok.generate_text(
@@ -277,8 +301,8 @@ async def generate(callback: CallbackQuery, state: FSMContext) -> None:
                 list((response.raw or {}).keys()),
             )
             await callback.message.answer(
-                "❌ <b>Модель вернула пустой ответ.</b>\n"
-                "Это похоже на временный сбой/лимит/блокировку. Попробуй ещё раз через 30-60 секунд."
+                "❌ <b>AI returned an empty response.</b>\nPlease try again in 30-60 seconds." if lang == "en" else
+                "❌ <b>Модель вернула пустой ответ.</b>\nЭто похоже на временный сбой/лимит/блокировку. Попробуй ещё раз через 30-60 секунд."
             )
             return
 
@@ -297,7 +321,7 @@ async def generate(callback: CallbackQuery, state: FSMContext) -> None:
                 try:
                     result = _try_parse_json(_attempt_simple_json_repair(raw_text))
                 except json.JSONDecodeError:
-                    await callback.message.answer("🔁 <b>Перегенерирую ответ (1/1) — предыдущий был некорректным...</b>")
+                    await callback.message.answer("🔁 <b>Regenerating response (1/1)... previous was invalid.</b>" if lang == "en" else "🔁 <b>Перегенерирую ответ (1/1) — предыдущий был некорректным...</b>")
                     regen_prompt = (
                         full_prompt
                         + "\n\nIMPORTANT: Return ONLY valid JSON. Do not include markdown fences. "
@@ -332,21 +356,21 @@ async def generate(callback: CallbackQuery, state: FSMContext) -> None:
                             except json.JSONDecodeError:
                                 logger.exception("Second regeneration JSON parse failed")
                                 await callback.message.answer(
-                                    "❌ <b>Модель дважды вернула некорректный JSON.</b>\n"
-                                    "Попробуй ещё раз через минуту или сократи описание проекта/идеи."
+                                    "❌ <b>AI failed to generate valid JSON twice.</b>\nPlease try again in a minute." if lang == "en" else
+                                    "❌ <b>Модель дважды вернула некорректный JSON.</b>\nПопробуй ещё раз через минуту или сократи описание проекта/идеи."
                                 )
                                 return
 
                     ok2, _ = _validate_result(result, editor=str(data.get("editor") or ""))
                     if not ok2:
                         await callback.message.answer(
-                            "❌ <b>Модель вернула некорректный результат.</b>\n"
-                            "Попробуй ещё раз через минуту или сократи описание проекта/идеи."
+                            "❌ <b>Invalid result from AI.</b>\nPlease try again." if lang == "en" else
+                            "❌ <b>Модель вернула некорректный результат.</b>\nПопробуй ещё раз через минуту или сократи описание проекта/идеи."
                         )
                         return
         
         ok, _ = _validate_result(result, editor=str(data.get("editor") or ""))
-        await callback.message.answer("✅ <b>Готово! Твои инструменты:</b>")
+        await callback.message.answer(_("gen_done", lang))
         
         if result.get("system_prompt"):
             await _send_pre_block(
@@ -384,7 +408,7 @@ async def generate(callback: CallbackQuery, state: FSMContext) -> None:
 
         if total_tokens is None:
             approx_total = max(1, (len(full_prompt) + len(response.text)) // 4)
-            usage_line = f"📊 <b>Токены:</b> ~{approx_total} (оценка)"
+            usage_line = f"📊 <b>Tokens:</b> ~{approx_total} (est)" if lang == "en" else f"📊 <b>Токены:</b> ~{approx_total} (оценка)"
         else:
             parts = []
             if prompt_tokens is not None:
@@ -392,7 +416,7 @@ async def generate(callback: CallbackQuery, state: FSMContext) -> None:
             if output_tokens is not None:
                 parts.append(f"out {output_tokens}")
             parts.append(f"total {total_tokens}")
-            usage_line = "📊 <b>Токены:</b> " + " | ".join(parts)
+            usage_line = ("📊 <b>Tokens:</b> " if lang == "en" else "📊 <b>Токены:</b> ") + " | ".join(parts)
         await callback.message.answer(usage_line)
 
         # 3. Cleanup and finish
@@ -403,6 +427,6 @@ async def generate(callback: CallbackQuery, state: FSMContext) -> None:
     except Exception:
         logger.exception("Generation failed")
         await callback.message.answer(
-            "❌ <b>Ошибка генерации.</b>\n"
-            "Это похоже на временный сбой API или неожиданный формат ответа. Попробуй ещё раз через 30-60 секунд."
+            "❌ <b>Generation error.</b>\nAPI error or unexpected format. Try again in 30s." if lang == "en" else
+            "❌ <b>Ошибка генерации.</b>\nЭто похоже на временный сбой API или неожиданный формат ответа. Попробуй ещё раз через 30-60 секунд."
         )

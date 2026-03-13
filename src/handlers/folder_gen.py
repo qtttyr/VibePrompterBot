@@ -27,6 +27,7 @@ from src.keyboards.inline import confirm_structure_kb, project_pick_kb, scope_kb
 from src.services.folder_engine import folder_engine
 from src.services.gemini_api import GeminiClient
 from src.utils.db import db
+from src.utils.i18n import _
 from src.utils.states import FolderGen
 
 router = Router()
@@ -151,19 +152,22 @@ async def _start_structure_flow(message: Message, state: FSMContext) -> None:
             for i, (p, s) in enumerate(projects)
         )
         await message.answer(
-            "🗂 <b>Генератор структуры папок</b>\n\n"
-            "Выбери проект из истории или добавь новый:\n\n"
-            + project_list_text,
-            reply_markup=project_pick_kb(projects),
+            _("folder_gen_start", lang) + "\n\n" + project_list_text,
+            reply_markup=project_pick_kb(projects, lang),
         )
     else:
         # No history — go straight to manual input
         await state.set_state(FolderGen.project_pick)
-        await message.answer(
+        no_history_text = (
+            "🗂 <b>Structure Generator</b>\n\n"
+            "You don't have any saved projects yet.\n\n"
+            "📝 Describe your project (stack, what you are building):"
+        ) if lang == "en" else (
             "🗂 <b>Генератор структуры папок</b>\n\n"
             "У тебя пока нет сохранённых проектов.\n\n"
             "📝 Опиши свой проект (стек, что строишь):"
         )
+        await message.answer(no_history_text)
 
 
 @router.message(Command("structure"))
@@ -185,45 +189,61 @@ async def pick_project(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
     if choice == "new":
+        lang = await db.get_user_language(callback.from_user.id)
         await state.set_state(FolderGen.project_pick)
-        await callback.message.edit_text(
+        prompt_text = (
+            "📝 Describe your project in one message (stack, features, etc.):"
+            if lang == "en" else
             "📝 Опиши свой проект одним сообщением (что строишь, стек, особенности):"
         )
+        await callback.message.edit_text(prompt_text)
         return
 
     # Existing project by index
+    user_id = callback.from_user.id
+    lang = await db.get_user_language(user_id)
     data = await state.get_data()
     saved = data.get("saved_projects", [])
     try:
         idx = int(choice)
         project_info, stack = saved[idx]
     except (ValueError, IndexError):
-        await callback.message.answer("❌ Проект не найден. Попробуй снова /structure")
+        error_msg = "❌ Project not found. Try again /structure" if lang == "en" else "❌ Проект не найден. Попробуй снова /structure"
+        await callback.message.answer(error_msg)
         return
 
     await state.update_data(project_info=project_info, stack=stack)
     await state.set_state(FolderGen.scope)
 
     short = (project_info or "")[:50]
-    await callback.message.edit_text(
+    prompt_text = (
+        f"✅ Project: <b>{escape(short)}{'…' if len(project_info) > 50 else ''}</b>\n\n"
+        "Choose structure type:"
+    ) if lang == "en" else (
         f"✅ Проект: <b>{escape(short)}{'…' if len(project_info) > 50 else ''}</b>\n\n"
-        "Выбери тип структуры:",
-        reply_markup=scope_kb(),
+        "Выбери тип структуры:"
+    )
+    await callback.message.edit_text(
+        prompt_text,
+        reply_markup=scope_kb(lang),
     )
 
 
 @router.message(FolderGen.project_pick)
 async def capture_new_project(message: Message, state: FSMContext) -> None:
+    user_id = message.from_user.id
+    lang = await db.get_user_language(user_id)
     project_info = (message.text or "").strip()
     if not project_info:
-        await message.answer("Пожалуйста, опиши проект текстом 📝")
+        await message.answer("Please describe your project in text 📝" if lang == "en" else "Пожалуйста, опиши проект текстом 📝")
         return
 
     await state.update_data(project_info=project_info, stack="")
     await state.set_state(FolderGen.scope)
+    success_msg = "✅ Project saved!\n\nChoose structure type:" if lang == "en" else "✅ Проект сохранён!\n\nВыбери тип структуры:"
     await message.answer(
-        f"✅ Проект сохранён!\n\nВыбери тип структуры:",
-        reply_markup=scope_kb(),
+        success_msg,
+        reply_markup=scope_kb(lang),
     )
 
 
@@ -231,6 +251,8 @@ async def capture_new_project(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(FolderGen.scope, F.data.startswith("fscope:"))
 async def pick_scope(callback: CallbackQuery, state: FSMContext) -> None:
+    user_id = callback.from_user.id
+    lang = await db.get_user_language(user_id)
     scope = callback.data.split(":", 1)[1]
     await state.update_data(scope=scope)
     await callback.answer()
@@ -241,37 +263,45 @@ async def pick_scope(callback: CallbackQuery, state: FSMContext) -> None:
 
     short_project = (project_info or "")[:60]
     scope_label = _build_scope_label(scope)
+    
+    summary_title = "🗂 <b>Ready to generate!</b>" if lang == "en" else "🗂 <b>Готово к генерации!</b>"
+    project_label = "Project" if lang == "en" else "Проект"
+    type_label = "Type" if lang == "en" else "Тип"
+    stack_label = "Stack" if lang == "en" else "Стек"
+    gen_hint = "Press <b>Generate</b>:" if lang == "en" else "Нажми <b>🚀 Генерировать</b>:"
 
     summary = (
-        f"🗂 <b>Готово к генерации!</b>\n\n"
-        f"📁 <b>Проект:</b> {escape(short_project)}{'…' if len(project_info) > 60 else ''}\n"
-        f"🏗 <b>Тип:</b> {scope_label}\n"
-        + (f"⚛️ <b>Стек:</b> {escape(stack)}\n" if stack else "")
-        + "\nНажми <b>🚀 Генерировать</b>:"
+        f"{summary_title}\n\n"
+        f"📁 <b>{project_label}:</b> {escape(short_project)}{'…' if len(project_info) > 60 else ''}\n"
+        f"🏗 <b>{type_label}:</b> {scope_label}\n"
+        + (f"⚛️ <b>{stack_label}:</b> {escape(stack)}\n" if stack else "")
+        + f"\n{gen_hint}"
     )
-    await callback.message.edit_text(summary, reply_markup=confirm_structure_kb())
+    await callback.message.edit_text(summary, reply_markup=confirm_structure_kb(lang))
 
 
 # ─── Generate / Cancel ───────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "fstruct:cancel")
 async def cancel_structure(callback: CallbackQuery, state: FSMContext) -> None:
+    lang = await db.get_user_language(callback.from_user.id)
     await state.clear()
     await callback.answer()
-    await callback.message.edit_text("❌ Генерация отменена. Нажми 🗂 Структура когда будешь готов!")
+    cancel_text = "❌ Generation cancelled. Ready when you are!" if lang == "en" else "❌ Генерация отменена. Нажми 🗂 Структура когда будешь готов!"
+    await callback.message.edit_text(cancel_text)
 
 
 @router.callback_query(F.data == "fstruct:generate")
 async def generate_structure(callback: CallbackQuery, state: FSMContext) -> None:
     user_id = callback.from_user.id
-    await callback.answer("⏳ Генерирую структуру...")
+    lang = await db.get_user_language(user_id)
+    await callback.answer("⏳ Generating structure..." if lang == "en" else "⏳ Генерирую структуру...")
 
     # Re-check limit (double-safety in case state lingered)
     can_gen = await db.check_folder_gen_limit(user_id)
     if not can_gen:
-        await callback.message.answer(
-            "🚫 <b>Лимит уже исчерпан.</b> Попробуй завтра!"
-        )
+        error_msg = "🚫 <b>Limit reached.</b> Try tomorrow!" if lang == "en" else "🚫 <b>Лимит уже исчерпан.</b> Попробуй завтра!"
+        await callback.message.answer(error_msg)
         await state.clear()
         return
 
@@ -282,10 +312,10 @@ async def generate_structure(callback: CallbackQuery, state: FSMContext) -> None
 
     settings = load_settings()
     if not settings.gemini_api_key:
-        await callback.message.answer("❌ GEMINI_API_KEY не настроен!")
+        await callback.message.answer("❌ GEMINI_API_KEY error")
         return
 
-    await callback.message.answer("🤖 <b>Архитектор думает над структурой...</b>")
+    await callback.message.answer("🤖 <b>Architect is designing...</b>" if lang == "en" else "🤖 <b>Архитектор думает над структурой...</b>")
 
     # Response schema for structured output — keeps JSON valid
     response_schema = {
@@ -325,6 +355,7 @@ async def generate_structure(callback: CallbackQuery, state: FSMContext) -> None
                 if not result.get("tree"):
                     logger.exception("Folder gen JSON parse failed. raw: %s", raw_text[:300])
                     await callback.message.answer(
+                        "❌ <b>AI returned invalid response.</b>\nPlease try again in 30s." if lang == "en" else
                         "❌ <b>Модель вернула некорректный ответ (проблема с кавычками или переносами).</b>\n"
                         "Попробуй снова через 30 секунд."
                     )
@@ -335,18 +366,18 @@ async def generate_structure(callback: CallbackQuery, state: FSMContext) -> None
         mkdir_cmd = str(result.get("mkdir_cmd") or "").replace("\\n", " ").strip()
 
         if not tree:
-            await callback.message.answer("❌ <b>Не удалось получить структуру.</b> Попробуй снова.")
+            await callback.message.answer("❌ <b>Failed to get structure.</b> Try again." if lang == "en" else "❌ <b>Не удалось получить структуру.</b> Попробуй снова.")
             return
 
         # ── Send results ─────────────────────────────────────────────────
-        await callback.message.answer("✅ <b>Структура готова!</b>")
+        await callback.message.answer("✅ <b>Structure ready!</b>" if lang == "en" else "✅ <b>Структура готова!</b>")
 
         # 1. Folder tree
-        await _send_pre(callback.message, "📁 <b>Дерево проекта:</b>", tree)
+        await _send_pre(callback.message, "📁 <b>Project Tree:</b>" if lang == "en" else "📁 <b>Дерево проекта:</b>", tree)
 
         # 2. mkdir command (may be long — split if needed)
         if mkdir_cmd:
-            await _send_pre(callback.message, "⚡ <b>Команда для терминала:</b>", mkdir_cmd)
+            await _send_pre(callback.message, "⚡ <b>Terminal Command:</b>" if lang == "en" else "⚡ <b>Команда для терминала:</b>", mkdir_cmd)
 
         # ── Save usage ───────────────────────────────────────────────────
         await db.increment_folder_gen_usage(user_id)
@@ -355,6 +386,6 @@ async def generate_structure(callback: CallbackQuery, state: FSMContext) -> None
     except Exception:
         logger.exception("Folder structure generation failed")
         await callback.message.answer(
-            "❌ <b>Ошибка генерации.</b>\n"
-            "Временный сбой API. Попробуй ещё раз через 30-60 секунд."
+            "❌ <b>Generation error.</b>\nTry again in 30s." if lang == "en" else
+            "❌ <b>Ошибка генерации.</b>\nВременный сбой API. Попробуй ещё раз через 30-60 секунд."
         )

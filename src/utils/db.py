@@ -50,6 +50,12 @@ class Database:
                     expires_at TIMESTAMP
                 )
             """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    language TEXT DEFAULT 'ru'
+                )
+            """)
             await db.commit()
 
     async def get_user_usage(self, user_id: int) -> int:
@@ -178,6 +184,26 @@ class Database:
                     plan = excluded.plan,
                     expires_at = excluded.expires_at
             """, (user_id, plan, expires_at))
+            await db.commit()
+
+    async def get_user_language(self, user_id: int) -> str:
+        """Returns the user's preferred language, defaulting to 'ru'."""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT language FROM users WHERE user_id = ?",
+                (user_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else "ru"
+
+    async def set_user_language(self, user_id: int, lang: str) -> None:
+        """Updates or sets the user's language preference."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT INTO users (user_id, language)
+                VALUES (?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET language = excluded.language
+            """, (user_id, lang))
             await db.commit()
 
 db = Database()

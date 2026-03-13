@@ -1,7 +1,8 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from src.utils.i18n import _
 
 
-def editors_kb() -> InlineKeyboardMarkup:
+def editors_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Cursor 🚀", callback_data="editor:cursor")],
@@ -14,7 +15,7 @@ def editors_kb() -> InlineKeyboardMarkup:
     )
 
 
-def stacks_kb() -> InlineKeyboardMarkup:
+def stacks_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="React + Tailwind ⚛️", callback_data="stack:react_tailwind")],
@@ -25,7 +26,7 @@ def stacks_kb() -> InlineKeyboardMarkup:
     )
 
 
-def models_kb() -> InlineKeyboardMarkup:
+def models_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -44,15 +45,15 @@ def models_kb() -> InlineKeyboardMarkup:
     )
 
 
-def generate_kb() -> InlineKeyboardMarkup:
+def generate_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Generate", callback_data="action:generate")],
+            [InlineKeyboardButton(text=_( "kb_generate", lang ), callback_data="action:generate")],
         ]
     )
 
 
-def project_pick_kb(projects: list) -> InlineKeyboardMarkup:
+def project_pick_kb(projects: list, lang: str = "ru") -> InlineKeyboardMarkup:
     """Inline keyboard with the user's saved projects and a 'new project' option."""
     rows = []
     for i, (project_info, stack) in enumerate(projects):
@@ -63,33 +64,49 @@ def project_pick_kb(projects: list) -> InlineKeyboardMarkup:
             text=f"{i + 1}. {label}",
             callback_data=f"fproj:{i}",
         )])
-    rows.append([InlineKeyboardButton(text="➕ Другой проект", callback_data="fproj:new")])
+    rows.append([InlineKeyboardButton(text=f"➕ {_( 'kb_other_project', lang )}", callback_data="fproj:new")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def scope_kb() -> InlineKeyboardMarkup:
+def language_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🖥 Backend", callback_data="fscope:backend")],
-            [InlineKeyboardButton(text="⚛️ Frontend", callback_data="fscope:frontend")],
-            [InlineKeyboardButton(text="🌐 Fullstack", callback_data="fscope:fullstack")],
+            [
+                InlineKeyboardButton(text="Русский 🇷🇺", callback_data="setlang:ru"),
+                InlineKeyboardButton(text="English 🇺🇸", callback_data="setlang:en"),
+            ]
         ]
     )
 
 
-def confirm_structure_kb() -> InlineKeyboardMarkup:
+def scope_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🚀 Генерировать", callback_data="fstruct:generate")],
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="fstruct:cancel")],
+            [InlineKeyboardButton(text=f"🖥 {_( 'scope_backend', lang )}", callback_data="fscope:backend")],
+            [InlineKeyboardButton(text=f"⚛️ {_( 'scope_frontend', lang )}", callback_data="fscope:frontend")],
+            [InlineKeyboardButton(text=f"🌐 {_( 'scope_fullstack', lang )}", callback_data="fscope:fullstack")],
         ]
     )
 
-def buy_pro_kb() -> InlineKeyboardMarkup:
+
+def confirm_structure_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⭐️ 1 Неделя PRO (150)", callback_data="buy_pro:week")],
-            [InlineKeyboardButton(text="⭐️ 1 Месяц PRO (450)", callback_data="buy_pro:month")],
-            [InlineKeyboardButton(text="⭐️ PRO Навсегда (2500)", callback_data="buy_pro:lifetime")],
+            [InlineKeyboardButton(text=f"🚀 {_( 'kb_generate', lang )}", callback_data="fstruct:generate")],
+            [InlineKeyboardButton(text=f"❌ {_( 'kb_cancel', lang )}", callback_data="fstruct:cancel")],
+        ]
+    )
+
+def buy_pro_kb(lang: str = "ru") -> InlineKeyboardMarkup:
+    prefix = _("buy_button_prefix", lang)
+    plan_week = _("plan_week_name", lang)
+    plan_month = _("plan_month_name", lang)
+    plan_lifetime = _("plan_lifetime_name", lang)
+    
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"{prefix} (150⭐️) - {plan_week}", callback_data="buy_pro:week")],
+            [InlineKeyboardButton(text=f"{prefix} (450⭐️) - {plan_month}", callback_data="buy_pro:month")],
+            [InlineKeyboardButton(text=f"{prefix} (2500⭐️) - {plan_lifetime}", callback_data="buy_pro:lifetime")],
         ]
     )
