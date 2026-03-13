@@ -360,7 +360,7 @@ async def generate(callback: CallbackQuery, state: FSMContext) -> None:
                                 )
                                 return
 
-                    ok2, _ = _validate_result(result, editor=str(data.get("editor") or ""))
+                    ok2, _err = _validate_result(result, editor=str(data.get("editor") or ""))
                     if not ok2:
                         await callback.message.answer(
                             "❌ <b>Invalid result from AI.</b>\nPlease try again." if lang == "en" else
@@ -368,7 +368,7 @@ async def generate(callback: CallbackQuery, state: FSMContext) -> None:
                         )
                         return
         
-        ok, _ = _validate_result(result, editor=str(data.get("editor") or ""))
+        ok, _err = _validate_result(result, editor=str(data.get("editor") or ""))
         await callback.message.answer(_("gen_done", lang))
         
         if result.get("system_prompt"):
